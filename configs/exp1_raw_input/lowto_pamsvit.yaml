@@ -1,0 +1,113 @@
+# =============================================================================
+# LOWTO PAMS-ViT Experiment Configuration (LSF DISABLED in this run)
+# =============================================================================
+# 12-fold Leave-One-Wave-Train-Out CV for the proposed PAMS-ViT architecture.
+# Raw 4-channel polarimetric input is fed directly into the Multi-Scale
+# Polarimetric Tokenization (MSPT) block, bypassing the Learnable Stokes
+# Fusion (LSF) module. This isolates the contribution of multi-scale
+# tokenization + transformer attention from the LSF contribution; LSF will
+# be re-enabled in a subsequent ablation run.
+#
+# Protocol mirrors lowto_cnn.yaml and lowto_mlp.yaml exactly (same splits,
+# same fold rule, same AdamW + ReduceLROnPlateau optimizer, same metrics)
+# for fair head-to-head comparison.
+# =============================================================================
+
+experiment:
+  name: "lowto_pamsvit_noLSF_v1"
+  description: >
+    12-fold LOWTO for PAMS-ViT with LSF DISABLED. Raw 4-channel polarimetric
+    input is tokenized at three spatial scales (16, 32, 56) by the MSPT
+    block, then processed by a 4-block transformer encoder. Output is a
+    scalar Hs estimate from the special-token representation. ~2.34M
+    parameters. Same AdamW+ReduceLROnPlateau optimizer protocol as
+    lowto_cnn.yaml.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I0", "I45", "I90", "I135"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+# -----------------------------------------------------------------------------
+# Model — PAMS-ViT (LSF disabled in this run)
+# -----------------------------------------------------------------------------
+model:
+  name: "pams_vit"
+  params:
+    in_channels: 4
+    image_size: 224
+    embed_dim: 64
+    patch_sizes: [16, 32, 56]
+    n_transformer_blocks: 4
+    n_heads: 4
+    mlp_ratio: 4.0
+    dropout: 0.0
+    head_hidden: 64
+    lsf_enabled: false        # ← CRITICAL: LSF disabled for this run
+    lsf_mid_channels: 16      #   (unused while lsf_enabled=false)
+    lsf_out_channels: 8       #   (unused while lsf_enabled=false)
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  loss: "mse"
+  batch_size: 16              # transformer attention scales with sequence length;
+                              # 261 tokens at batch=16 fits comfortably on A100
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20              # same safeguard as upgraded MLP/CNN configs
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

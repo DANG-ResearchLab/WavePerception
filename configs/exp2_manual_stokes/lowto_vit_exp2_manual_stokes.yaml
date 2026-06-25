@@ -1,0 +1,97 @@
+# =============================================================================
+# LOWTO Vanilla ViT — Experiment 2: Manual Stokes Input
+# =============================================================================
+# Input: [I, DoLP, sin(AoP), cos(AoP)] derived analytically from raw pixels.
+# Vanilla ViT baseline: single-scale 16x16 patch tokenization, D=64,
+# 4 transformer encoder blocks, learnable CLS token + positional encoding.
+# Identical training protocol to MLP and CNN Exp 2 runs.
+# Establishes the single-scale transformer baseline before PAMS-ViT.
+# =============================================================================
+
+experiment:
+  name: "lowto_vit_exp2_manual_stokes"
+  description: >
+    12-fold LOWTO for vanilla ViT with manual Stokes input
+    [I, DoLP, sin(AoP), cos(AoP)]. Single-scale 16x16 patch tokenization
+    yields 196 tokens, embedding dim D=64, 4 encoder blocks, 4 attention
+    heads. CLS token regression head (LN -> 2-layer MLP). ~183K parameters.
+    All training hyperparameters identical to CNN and MLP Exp 2 runs.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I", "DoLP", "sin_AoP", "cos_AoP"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+model:
+  name: "vit_baseline"
+  params:
+    in_channels:          4
+    image_size:           224
+    patch_size:           16
+    embed_dim:            64
+    n_transformer_blocks: 4      # was num_blocks
+    n_heads:              4      # was num_heads
+    mlp_hidden:           64     # was mlp_ratio — fixed value, not a ratio
+    head_hidden:          64     # regression head hidden dim
+                                 # dropout removed — not in VanillaViT.__init__
+
+training:
+  loss: "mse"
+  batch_size: 16
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

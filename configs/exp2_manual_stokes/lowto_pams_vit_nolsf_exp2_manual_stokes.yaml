@@ -1,0 +1,101 @@
+# =============================================================================
+# LOWTO PAMS-ViT (noLSF) — Experiment 2: Manual Stokes Input
+# =============================================================================
+# Input: [I, DoLP, sin(AoP), cos(AoP)] derived analytically from raw pixels.
+# PAMS-ViT with LSF disabled: raw 4-channel input fed directly to MSPT.
+# Isolates the contribution of multi-scale tokenization alone, without
+# the learnable polarimetric fusion block.
+# Identical training protocol to all previous Exp 2 runs.
+# =============================================================================
+
+experiment:
+  name: "lowto_pams_vit_nolsf_exp2_manual_stokes"
+  description: >
+    12-fold LOWTO for PAMS-ViT with LSF disabled (lsf_enabled=False) and
+    manual Stokes input [I, DoLP, sin(AoP), cos(AoP)]. Raw 4-channel input
+    is fed directly to MSPT (patch sizes 16, 32, 56), yielding 261 tokens.
+    4 transformer encoder blocks, embed_dim=64, 4 heads. Ablation isolating
+    MSPT contribution without learnable fusion. ~1.35M parameters.
+    All training hyperparameters identical to all previous Exp 2 runs.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I", "DoLP", "sin_AoP", "cos_AoP"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+model:
+  name: "pams_vit"
+  params:
+    in_channels:          4
+    image_size:           224
+    embed_dim:            64
+    patch_sizes:          [16, 32, 56]
+    n_transformer_blocks: 4
+    n_heads:              4
+    mlp_ratio:            4.0
+    dropout:              0.0
+    head_hidden:          64
+    lsf_enabled:          false      # LSF disabled — MSPT receives raw input
+    lsf_mid_channels:     16
+    lsf_out_channels:     8
+
+training:
+  loss: "mse"
+  batch_size: 16
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

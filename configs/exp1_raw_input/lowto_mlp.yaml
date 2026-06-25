@@ -1,0 +1,99 @@
+# =============================================================================
+# LOWTO ShallowMLP Experiment Configuration
+# =============================================================================
+# 12-fold Leave-One-Wave-Train-Out CV for the ShallowMLP baseline.
+# Establishes how much spatial structure matters: if a flatten-then-MLP
+# performs comparably to CNN/ViT, spatial inductive bias is not the key.
+#
+# Same protocol as lowto_cnn.yaml (same splits, same optimizer family, same
+# fold rule, same metrics) — only model and a couple of hyperparameters differ.
+# =============================================================================
+
+experiment:
+  name: "lowto_mlp_v1"
+  description: >
+    12-fold LOWTO for ShallowMLP. Raw 4-channel polarimetric input is
+    flattened to a 200704-D vector and processed by two hidden layers
+    (512, 128) with ReLU and dropout=0.3. ~102.8M parameters. Same
+    AdamW+ReduceLROnPlateau optimizer protocol as lowto_cnn.yaml.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I0", "I45", "I90", "I135"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+# -----------------------------------------------------------------------------
+# Model — ShallowMLP (the only material change from lowto_cnn.yaml)
+# -----------------------------------------------------------------------------
+model:
+  name: "shallow_mlp"
+  params:
+    in_channels: 4
+    image_size:  224
+    hidden1:     512
+    hidden2:     128
+    dropout:     0.3
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  loss: "mse"
+  batch_size: 32           # MLP fit comfortably at 32 on GPU (CNN was 16)
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4             # same as CNN; MLP can also tolerate 1e-4 well
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20            # critical safeguard, same as CNN
+  max_epochs: 60
+  grad_clip_norm: 1.0      # essential for stability with 102M-param MLP
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

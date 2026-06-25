@@ -1,0 +1,111 @@
+# =============================================================================
+# LOWTO Vanilla ViT Experiment Configuration
+# =============================================================================
+# 12-fold Leave-One-Wave-Train-Out CV for the Vanilla ViT baseline reconstructed
+# from the rejected manuscript (Section II-B-5).
+#
+# This is the most architecturally comparable baseline to PAMS-ViT: identical
+# transformer encoder, identical embedding dimension, identical regression head,
+# but SINGLE-SCALE 16x16 patch tokenization (196 tokens) versus PAMS-ViT's
+# multi-scale tokenization (261 tokens at 16, 32, 56). The performance gap
+# between this model and PAMS-ViT therefore isolates the contribution of
+# multi-scale polarimetric tokenization.
+#
+# Same protocol as lowto_cnn.yaml, lowto_mlp.yaml, lowto_pamsvit.yaml,
+# lowto_resnet34.yaml exactly (same splits, same fold rule, same AdamW +
+# ReduceLROnPlateau optimizer, same metrics) for fair head-to-head comparison.
+# =============================================================================
+
+experiment:
+  name: "lowto_vit_v1"
+  description: >
+    12-fold LOWTO for Vanilla ViT (single-scale 16x16 patches). Reconstructed
+    from the rejected manuscript's Section II-B-5 architecture: 4 transformer
+    blocks, embedding dim 64, 4 attention heads, MLP hidden 64. ~183k
+    parameters. Same AdamW+ReduceLROnPlateau optimizer protocol as the other
+    LOWTO experiments. Serves as the primary ablation baseline isolating the
+    contribution of multi-scale tokenization in PAMS-ViT.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I0", "I45", "I90", "I135"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+# -----------------------------------------------------------------------------
+# Model — Vanilla ViT (reconstructed from rejected manuscript)
+# -----------------------------------------------------------------------------
+model:
+  name: "vit_baseline"
+  params:
+    in_channels: 4
+    image_size: 224
+    patch_size: 16
+    embed_dim: 64
+    n_transformer_blocks: 4
+    n_heads: 4
+    mlp_hidden: 64           # mlp_ratio=1.0, matches rejected Table I (183k params)
+    head_hidden: 64
+
+# -----------------------------------------------------------------------------
+# Training — identical to other LOWTO experiments
+# -----------------------------------------------------------------------------
+training:
+  loss: "mse"
+  batch_size: 16
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

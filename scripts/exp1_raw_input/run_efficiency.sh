@@ -1,0 +1,28 @@
+#!/bin/bash
+#SBATCH --job-name=efficiency_measure
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=32G
+#SBATCH --time=01:00:00
+#SBATCH --partition=mrigpu
+#SBATCH --gres=gpu:1
+#SBATCH --output=/mnt/mridata/mahamm2/swh_estimation/experiments/28_May_lowto_experiments_v1/logs/efficiency_%j.out
+#SBATCH --error=/mnt/mridata/mahamm2/swh_estimation/experiments/28_May_lowto_experiments_v1/logs/efficiency_%j.err
+
+set -e
+
+PROJECT_ROOT="/mnt/mridata/mahamm2/swh_estimation/experiments/28_May_lowto_experiments_v1"
+
+source /home/mahamm2/miniconda3/etc/profile.d/conda.sh
+conda activate dl_wave
+
+# Install thop if not already
+pip install thop -q
+
+cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+
+python -u scripts/measure_efficiency.py --project_root "$PROJECT_ROOT"
+
+echo "Efficiency measurement complete."

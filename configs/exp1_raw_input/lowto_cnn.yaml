@@ -1,0 +1,141 @@
+# =============================================================================
+# LOWTO CNN Experiment Configuration
+# =============================================================================
+# Single source of truth for one experiment run.
+# To run a different experiment, copy this file, rename, edit, and pass to main.py.
+#
+# Resolves reviewer concerns:
+#   R1-2 : wave-train-grouped splits (no leakage)
+#   R1-4 : unified AdamW + ReduceLROnPlateau across all models
+#   R2-5 : 12-fold LOWTO cross-validation
+# =============================================================================
+
+experiment:
+  name: "lowto_cnn_v1"
+  description: >
+    12-fold Leave-One-Wave-Train-Out cross-validation for the SimpleCNN
+    baseline. Raw 4-channel polarimetric input [I0, I45, I90, I135] is
+    z-score normalized using each fold's own training statistics
+    (leakage-free). Within each fold: 10 wave trains for training,
+    1 cyclic-next wave train for validation, 1 held-out wave train for test.
+  seed: 0
+
+# -----------------------------------------------------------------------------
+# Device handling
+# -----------------------------------------------------------------------------
+device: "auto"   # "auto" -> cuda if available, else cpu; or force "cuda" / "cpu"
+
+# -----------------------------------------------------------------------------
+# Data
+# -----------------------------------------------------------------------------
+data:
+  # Path to dataset root, relative to project root (where main.py runs).
+  # Override at submission time on the cluster if the path differs there.
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+
+  # Polarimetric channel demosaic convention — must match dataset.py
+  channels: ["I0", "I45", "I90", "I135"]
+
+  # Per-image scale before z-score: divide raw uint8 by 255 -> [0, 1]
+  # The z-score stats are computed PER FOLD on that fold's train set only.
+  normalization: "zscore_train_only"
+
+# -----------------------------------------------------------------------------
+# Split strategy
+# -----------------------------------------------------------------------------
+split:
+  mode: "lowto"            # "lowto" or "single_wavetrain"
+  fold_column: "fold_lowto"     # column in splits.csv that defines fold assignment
+  val_rule: "cyclic_next"  # val = wave train of fold (k+1) % N_FOLDS
+  n_folds: 12              # for sanity check; should match splits.csv
+
+# -----------------------------------------------------------------------------
+# Model
+# -----------------------------------------------------------------------------
+model:
+  name: "simple_cnn"       # registry key in src/models/__init__.py
+  params:
+    in_channels: 4
+    dropout: 0.2
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  loss: "mse"
+  batch_size: 16
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  # Early stopping
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  # Minimum epochs before the early stopper is allowed to mark any
+  # epoch as 'best'. Prevents capturing the lucky first-epoch validation
+  # loss of an untrained network (the bug we caught in the notebook).
+  min_epochs: 5
+
+  max_epochs: 60
+
+  # Gradient clipping (max gradient L2 norm). Set to null to disable.
+  grad_clip_norm: 1.0
+
+  # DataLoader settings
+  num_workers: 4           # on cluster: try 4; on laptop CPU: keep 0
+  pin_memory: true         # true on GPU, harmless on CPU
+
+# -----------------------------------------------------------------------------
+# Evaluation
+# -----------------------------------------------------------------------------
+evaluation:
+  # Metrics computed per fold (test set) and pooled across all folds.
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+
+  # Per-fold R^2 is undefined when test has constant Hs (single wave train);
+  # pooled R^2 over all 12 folds (12 distinct Hs values) is well-defined.
+  pool_predictions_for_r2: true
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  # Root for all run artifacts (relative to project root)
+  runs_root: "outputs/runs"
+
+  # Run folder will be: {runs_root}/{experiment.name}_{timestamp}/
+  # timestamp format YYYYMMDD_HHMMSS
+  timestamp_format: "%Y%m%d_%H%M%S"
+
+  # What to save per fold
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+
+  # What to save at aggregate level (after all folds)
+  save_aggregate:
+    pooled_predictions: true   # all 1200 predictions in one CSV
+    summary_metrics:    true   # mean ± std, pooled R^2
+    per_wavetrain_table: true

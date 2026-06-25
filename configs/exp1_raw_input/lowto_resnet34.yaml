@@ -1,0 +1,101 @@
+# =============================================================================
+# LOWTO ResNet34 Experiment Configuration
+# =============================================================================
+# 12-fold Leave-One-Wave-Train-Out CV for the ResNet34 baseline (He et al., 2016).
+# First conv layer is modified to accept 4-channel polarimetric input
+# [I0, I45, I90, I135]; the final FC layer is replaced with a scalar regression
+# head. From-scratch initialization (no ImageNet pretraining), matching the
+# other from-scratch baselines in this comparison study.
+#
+# Same protocol as lowto_cnn.yaml, lowto_mlp.yaml, lowto_pamsvit.yaml exactly
+# (same splits, same fold rule, same AdamW + ReduceLROnPlateau optimizer,
+# same metrics) for fair head-to-head comparison.
+# =============================================================================
+
+experiment:
+  name: "lowto_resnet34_v1"
+  description: >
+    12-fold LOWTO for ResNet34 with 4-channel input and scalar regression
+    head. From-scratch initialization. Four residual stages with [3, 4, 6, 3]
+    blocks; ~21.3M parameters. Same AdamW+ReduceLROnPlateau optimizer protocol
+    as lowto_cnn.yaml.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I0", "I45", "I90", "I135"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+# -----------------------------------------------------------------------------
+# Model — ResNet34 (from-scratch, 4-channel adapted)
+# -----------------------------------------------------------------------------
+model:
+  name: "resnet34"
+  params:
+    in_channels: 4
+    pretrained: false
+    kaiming_init_new_layers: true
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  loss: "mse"
+  batch_size: 16            # ResNet34 activations on A100-80GB at batch=16 fit
+                            # comfortably; consistent with CNN and PAMS-ViT
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20            # same safeguard as MLP/CNN-upgrade/PAMS-ViT configs
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

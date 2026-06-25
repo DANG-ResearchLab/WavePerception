@@ -1,0 +1,121 @@
+# =============================================================================
+# LOWTO PAMS-ViT FULL (with LSF ENABLED) Experiment Configuration
+# =============================================================================
+# 12-fold Leave-One-Wave-Train-Out CV for the FULL PAMS-ViT architecture as
+# proposed in the manuscript: raw 4-channel polarimetric input is first
+# processed by the Learnable Stokes Fusion (LSF) module (4 -> 16 -> 8 channels
+# via two 1x1 convolutions with GELU), then tokenized at three spatial scales
+# (16, 32, 56) by the MSPT module, and finally processed by a 4-block
+# transformer encoder with a regression head.
+#
+# This experiment completes the PAMS-ViT ablation pair:
+#   - PAMS-ViT (noLSF):  raw -> MSPT -> Transformer        (already done)
+#   - PAMS-ViT (full) :  raw -> LSF -> MSPT -> Transformer (this experiment)
+#
+# The performance difference between the two variants quantifies the
+# marginal contribution of the LSF module within the PAMS-ViT architecture.
+#
+# Protocol identical to lowto_pamsvit.yaml (same splits, same fold rule,
+# same AdamW + ReduceLROnPlateau optimizer, same metrics, same min_epochs=20)
+# for direct head-to-head comparison.
+# =============================================================================
+
+experiment:
+  name: "lowto_pamsvit_fullLSF_v1"
+  description: >
+    12-fold LOWTO for the FULL PAMS-ViT architecture with LSF ENABLED. Raw
+    4-channel polarimetric input [I0, I45, I90, I135] is first fused by the
+    LSF module (two 1x1 convolutions, 4 -> 16 -> 8 channels, with GELU
+    activations), then tokenized at three spatial scales (16, 32, 56) by the
+    MSPT module, and processed by a 4-block transformer encoder. Same
+    AdamW+ReduceLROnPlateau optimizer protocol as all other LOWTO experiments.
+    Completes the LSF ablation against lowto_pamsvit_noLSF_v1 to quantify
+    LSF's marginal contribution.
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I0", "I45", "I90", "I135"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+# -----------------------------------------------------------------------------
+# Model — PAMS-ViT FULL (LSF ENABLED in this run)
+# -----------------------------------------------------------------------------
+model:
+  name: "pams_vit"
+  params:
+    in_channels: 4
+    image_size: 224
+    embed_dim: 64
+    patch_sizes: [16, 32, 56]
+    n_transformer_blocks: 4
+    n_heads: 4
+    mlp_ratio: 4.0
+    dropout: 0.0
+    head_hidden: 64
+    lsf_enabled: true         # ← CRITICAL: LSF ENABLED for full PAMS-ViT
+    lsf_mid_channels: 16      #   LSF first 1x1 conv: 4 -> 16 channels
+    lsf_out_channels: 8       #   LSF second 1x1 conv: 16 -> 8 channels
+
+# -----------------------------------------------------------------------------
+# Training — identical to all other LOWTO experiments for fair comparison
+# -----------------------------------------------------------------------------
+training:
+  loss: "mse"
+  batch_size: 16
+
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+
+  min_epochs: 20
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
+
+evaluation:
+  metrics: ["rmse", "mae", "mse", "bias", "mape", "r2"]
+  pool_predictions_for_r2: true
+
+output:
+  runs_root: "outputs/runs"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  save_per_fold:
+    config_snapshot: true
+    channel_stats:   true
+    training_history: true
+    predictions_csv:  true
+    best_checkpoint:  true
+    fold_summary:     true
+  save_aggregate:
+    pooled_predictions: true
+    summary_metrics:    true
+    per_wavetrain_table: true

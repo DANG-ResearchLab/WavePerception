@@ -1,0 +1,68 @@
+# =============================================================================
+# Sensitivity Analysis Base Config — PAMS-ViT (full LSF)
+# =============================================================================
+# Single-fold (k=5, Hs=1.5 cm) runs with hyperparameter overrides from CLI.
+# Each variation of (embed_dim, n_blocks, lr) is a separate run.
+# =============================================================================
+
+experiment:
+  name: "sensitivity_pamsvit_fullLSF"
+  seed: 0
+
+device: "auto"
+
+data:
+  dataset_root: "../../dataset"
+  splits_csv:   "../../dataset/splits.csv"
+  image_size:   224
+  channels: ["I0", "I45", "I90", "I135"]
+  normalization: "zscore_train_only"
+
+split:
+  mode: "lowto"
+  fold_column: "fold_lowto"
+  val_rule: "cyclic_next"
+  n_folds: 12
+
+model:
+  name: "pams_vit"
+  params:
+    in_channels: 4
+    image_size: 224
+    embed_dim: 64                  # default; overridden by CLI
+    patch_sizes: [16, 32, 56]
+    n_transformer_blocks: 4        # default; overridden by CLI
+    n_heads: 4
+    mlp_ratio: 4.0
+    dropout: 0.0
+    head_hidden: 64
+    lsf_enabled: true              # full LSF version
+    lsf_mid_channels: 16
+    lsf_out_channels: 8
+
+training:
+  loss: "mse"
+  batch_size: 16
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4                     # default; overridden by CLI
+    weight_decay: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+  scheduler:
+    name: "reduce_lr_on_plateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1.0e-4
+    threshold_mode: "rel"
+    min_lr: 1.0e-7
+  early_stopping:
+    patience: 10
+    delta: 1.0e-4
+    mode: "min"
+  min_epochs: 20
+  max_epochs: 60
+  grad_clip_norm: 1.0
+  num_workers: 4
+  pin_memory: true
