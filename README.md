@@ -7,8 +7,6 @@ The framework combines a learnable Stokes fusion (LSF) module with multi-scale
 polarimetric tokenization (MSPT) to estimate SWH directly from raw four-channel
 polarimetric images, without relying on fixed analytic Stokes preprocessing.
 
-Manuscript submitted to *Ocean Engineering* (Elsevier).
-
 **Authors:** Md Istiak Ahammed, Fengying Dang
 **Affiliation:** Department of Mechanical Engineering–Engineering Mechanics,
 Michigan Technological University
