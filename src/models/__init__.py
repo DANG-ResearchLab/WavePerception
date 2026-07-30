@@ -10,12 +10,18 @@ model construction anywhere else.
 from typing import Callable, Dict
 import torch.nn as nn
 
-from src.models.cnn          import SimpleCNN
-from src.models.mlp          import ShallowMLP
-from src.models.pams_vit     import PAMSViT
-from src.models.resnet       import ResNet34Regressor
-from src.models.vit_baseline import VanillaViT
-from src.models.inception_v3 import InceptionV3Regressor       # ← নতুন import
+# from src.models.cnn          import SimpleCNN
+# from src.models.mlp          import ShallowMLP
+# from src.models.pams_vit     import PAMSViT
+# from src.models.resnet       import ResNet34Regressor
+# from src.models.vit_baseline import VanillaViT
+# from src.models.inception_v3 import InceptionV3Regressor       # ← নতুন import
+
+from src.benchmarks.cnn          import SimpleCNN
+from src.benchmarks.mlp          import ShallowMLP
+from src.benchmarks.resnet       import ResNet34Regressor
+from src.benchmarks.vit_baseline import VanillaViT
+from src.benchmarks.inception_v3 import InceptionV3Regressor
 
 
 MODEL_REGISTRY: Dict[str, Callable[..., nn.Module]] = {
