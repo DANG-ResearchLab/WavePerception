@@ -281,4 +281,4 @@ Please also cite the dataset:
 ## Contact
 
 Md Istiak Ahammed — mahamm2@mtu.edu
-Michigan Technological University, MEEM Department
+Michigan Technological University, ECE Department
